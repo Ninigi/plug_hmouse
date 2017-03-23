@@ -1,5 +1,5 @@
 defmodule PlugHMouse.Render.URLENCODEDError do
-  def render("403") do
+  def hmouse_render("403") do
     "Error: Invalid HMAC"
   end
 end

@@ -7,7 +7,7 @@ defmodule PlugHMouseTest do
   @valid_hash_options @valid_options ++ [hash_algo: :sha256, digest: &Base.encode64/1]
 
   defmodule ErrorView do
-    def render("403.json") do
+    def hmouse_render("403.json") do
       %{"custom_error" => "This is a custom Error."}
     end
 
@@ -86,7 +86,7 @@ defmodule PlugHMouseTest do
       |> PlugHMouse.call(PlugHMouse.init(options))
 
     assert conn.private.custom_strat == "used"
-    assert conn.resp_body == Poison.encode!(__MODULE__.ErrorView.render("403.json"))
+    assert conn.resp_body == Poison.encode!(__MODULE__.ErrorView.hmouse_render("403.json"))
   end
 
   @tag :hash

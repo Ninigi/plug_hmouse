@@ -36,7 +36,7 @@ defmodule PlugHMouse.Render do
     do_render_error({content_type, error_view, template, @default_strategies[content_type]}, conn)
   end
   defp do_render_error({content_type, error_view, template, strategy}, conn) do
-    conn |> strategy.(error_view.render(template))
+    conn |> strategy.(error_view.hmouse_render(template))
   end
 
   defp normalize_content_type({:ok, _type, "x-www-form-urlencoded", _params}), do: "urlencoded"

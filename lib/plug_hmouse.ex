@@ -1,10 +1,15 @@
 defmodule PlugHMouse do
   import Plug.Conn
 
-  @parsers_default_options [
+  @plug_parsers_default [
     parsers: [PlugHMouse.Parsers.URLENCODED, :multipart, PlugHMouse.Parsers.JSON],
     pass: ["*/*"],
     json_decoder: Poison
+  ]
+
+  @error_views_default [
+    {"json", PlugHMouse.Render.JSONError, "403.json"},
+    {"urlencoded", PlugHMouse.Render.URLENCODEDError, "403"}
   ]
 
   def init(opts) do
@@ -32,7 +37,8 @@ defmodule PlugHMouse do
     opts
       |> Keyword.put_new(:hash_algo, :sha256)
       |> Keyword.put_new(:digest, &Base.encode64/1)
-      |> Keyword.put_new(:plug_parsers, @parsers_default_options)
+      |> Keyword.put_new(:plug_parsers, @plug_parsers_default)
+      |> Keyword.put_new(:error_views, @error_views_default)
   end
 
   def call(%Plug.Conn{req_headers: req_headers} = conn, opts) do
@@ -40,7 +46,7 @@ defmodule PlugHMouse do
     |> Plug.Parsers.call(Plug.Parsers.init(opts[:plug_parsers] ++ opts))
     |> get_hashes(opts[:header_key])
     |> compare_hashes()
-    |> halt_or_pipe_through()
+    |> halt_or_pipe_through(opts)
   end
 
   defp get_hashes(conn, header_key) do
@@ -52,15 +58,15 @@ defmodule PlugHMouse do
     end
   end
 
-  defp compare_hashes({:ok, conn, _hash, _hash}), do: {:ok, conn}
+  defp compare_hashes({:ok, conn, hash, hash}), do: {:ok, conn}
   defp compare_hashes({:ok, conn, _, nil}), do: {:ok, conn}
   defp compare_hashes({:ok, conn, _hash, _other_hash}), do: {:error, conn}
 
-  defp halt_or_pipe_through({:ok, conn}),
+  defp halt_or_pipe_through({:ok, conn}, _),
     do: conn
-  defp halt_or_pipe_through({:error, conn}) do
+  defp halt_or_pipe_through({:error, conn}, opts) do
     conn
-    |> put_status(403)
+    |> PlugHMouse.Render.render_error(opts[:error_views])
     |> halt()
   end
 

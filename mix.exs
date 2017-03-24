@@ -24,7 +24,10 @@ defmodule PlugHMouse.Mixfile do
 
   defp description do
     """
-    HMAC for Plug applications using Plug.Conn and Plug.Parsers
+    HMAC for Plug applications using Plug.Conn and Plug.Parsers.
+
+    Use custom parsers (same as Plug.Parsers) and custom response strategies, or
+    simply stick to the default strategy to verify signed requests.
     """
   end
 

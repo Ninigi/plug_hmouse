@@ -1,6 +1,7 @@
 defmodule PlugHMouse.Parsers.JSON do
+  @behaviour Plug.Parsers
+
   alias Plug.Conn
-  import Plug.Parsers.JSON
 
   def parse(conn, "application", subtype, _headers, opts) do
     if subtype == "json" || String.ends_with?(subtype, "+json") do

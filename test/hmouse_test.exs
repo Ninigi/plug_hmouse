@@ -7,11 +7,14 @@ defmodule PlugHMouseTest do
   @valid_hash_options @valid_options ++ [hash_algo: :sha256, digest: &Base.encode64/1]
 
   defmodule ErrorView do
+    @behaviour PlugHMouse.RenderStrategy
+    @behaviour PlugHMouse.ResponseStrategy
+
     def hmouse_render("403.json") do
       %{"custom_error" => "This is a custom Error."}
     end
 
-    def custom_strat(conn, response) do
+    def respond(conn, response) do
       conn
       |> put_private(:custom_strat, "used")
       |> resp(403, Poison.encode!(response))
@@ -78,7 +81,7 @@ defmodule PlugHMouseTest do
   @tag :config_error_views
   test "config error_views" do
     hash = PlugHMouse.hash(Poison.encode!(%{"content" => "The Body"}), @valid_hash_options)
-    options = @valid_options ++ [error_views: [{"json", __MODULE__.ErrorView, "403.json", &__MODULE__.ErrorView.custom_strat/2}]]
+    options = @valid_options ++ [error_views: [{"json", __MODULE__.ErrorView, "403.json", __MODULE__.ErrorView}]]
 
     conn = conn(:post, "/", Poison.encode!(%{"content" => "The invalid Body"}))
       |> put_req_header(@valid_options[:header_key], hash)
@@ -87,6 +90,22 @@ defmodule PlugHMouseTest do
 
     assert conn.private.custom_strat == "used"
     assert conn.resp_body == Poison.encode!(__MODULE__.ErrorView.hmouse_render("403.json"))
+  end
+
+  @tag :config_only
+  test "config only" do
+    body = Poison.encode!(%{"content" => "The Body"})
+    options = @valid_options ++ [only: ["validated-address"]]
+
+    conn(:post, "/validated-address/1/acb/abc/acdc", body)
+      |> put_req_header("content-type", "application/vnd.api+json")
+      |> PlugHMouse.call(PlugHMouse.init(options))
+      |> assert_unauthorized()
+
+    conn(:post, "/not-validated-address/1", body)
+      |> put_req_header("content-type", "application/vnd.api+json")
+      |> PlugHMouse.call(PlugHMouse.init(options))
+      |> assert_authorized()
   end
 
   @tag :hash

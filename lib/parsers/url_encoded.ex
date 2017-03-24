@@ -1,6 +1,7 @@
 defmodule PlugHMouse.Parsers.URLENCODED do
+  @behaviour Plug.Parsers
+
   alias Plug.Conn
-  import Plug.Parsers.URLENCODED
 
   def parse(conn, "application", "x-www-form-urlencoded", _headers, opts) do
     case Conn.read_body(conn, opts) do

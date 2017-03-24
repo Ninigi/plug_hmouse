@@ -94,7 +94,7 @@ defmodule PlugHMouse do
     if conn.path_info |> must_be_validated?(validated_paths) do
       do_call(conn, opts)
     else
-      conn
+      conn |> Plug.Parsers.call(Plug.Parsers.init(opts[:plug_parsers] ++ opts))
     end
   end
   defp do_call(conn, opts, nil), do: do_call(conn, opts)

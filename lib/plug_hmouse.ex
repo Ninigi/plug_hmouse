@@ -4,15 +4,14 @@ defmodule PlugHMouse do
   Replace Plug.Parsers with PlugHMouse and you are ready to go, for example:
 
       plug PlugHMouse,
-        secret_key: "MySecretKey123",
-        header_key: "x-shopify-hmac-sha256"
+        validate: {"MySecretKey123", "x-shopify-hmac-sha256"}
 
   ## Options
 
-  * `:secret_key` - String used to sign a request body
-
-  * `:header_key` - The signature-header's name. Keep in mind that Conn headers are **lowercase**,
-    so if the original header is `X-Shopify-Hmac-SHA256`, the `:header_key` should be `"x-shopify-hmac-sha256"`
+  * `:validate` - Tuple in the form of {"hmac-header-name", "MySecretKey"} or
+    [{"hmac-header-name", "MySecretKey"}, {"another-hmac-header-name", "MyOtherSecretKey"}]. Keep
+    in mind that Conn headers are **lowercase**, so if the original header is `X-Shopify-Hmac-SHA256`,
+    the header key would be `"x-shopify-hmac-sha256"`
 
   * `:error_views` - Optional List of Tuples to define custom strategies to render a response when the
     verification fails. Values are in the Form of {"name-of-content-type",  MyApp.RenderStrategy, "template.name"}
@@ -50,18 +49,13 @@ defmodule PlugHMouse do
     @moduledoc false
 
     def raise_if_missing_key(opts) do
-      Keyword.get(opts, :secret_key) || raise_missing_secret_key()
-      Keyword.get(opts, :header_key) || raise_missing_header_key()
+      Keyword.get(opts, :validate) || raise_missing_validate_opt()
 
       opts
     end
 
-    defp raise_missing_secret_key do
-      raise ArgumentError, "PlugHMouse expects a secret_key"
-    end
-
-    defp raise_missing_header_key do
-      raise ArgumentError, "PlugHMouse expects a header_key"
+    defp raise_missing_validate_opt do
+      raise ArgumentError, "PlugHMouse expects a :validate key"
     end
   end
 
@@ -73,37 +67,58 @@ defmodule PlugHMouse do
 
   defp parse_opts(opts) do
     opts
-      |> Keyword.put_new(:hash_algo, :sha256)
-      |> Keyword.put_new(:digest, &Base.encode64/1)
-      |> Keyword.put_new(:plug_parsers, @plug_parsers_default)
-      |> Keyword.put_new(:error_views, @error_views_default)
+    |> Keyword.put_new(:plug_parsers, @plug_parsers_default)
+    |> Keyword.put_new(:error_views, @error_views_default)
   end
 
   def call(%Plug.Conn{req_headers: _} = conn, opts) do
-    do_call(conn, opts, List.keyfind(opts, :only, 0))
-  end
+    if conn.path_info |> must_be_validated?(List.keyfind(opts, :only, 0)) do
+      opts = put_algo_opts(conn, opts)
 
-  defp do_call(conn, opts) do
-    conn
-    |> Plug.Parsers.call(Plug.Parsers.init(opts[:plug_parsers] ++ opts))
-    |> get_hashes(opts[:header_key])
-    |> compare_hashes()
-    |> halt_or_pipe_through(opts)
-  end
-  defp do_call(conn, opts, {:only, validated_paths}) do
-    if conn.path_info |> must_be_validated?(validated_paths) do
-      do_call(conn, opts)
+      conn
+      |> Plug.Parsers.call(Plug.Parsers.init(opts[:plug_parsers] ++ opts))
+      |> get_hashes(opts[:validate])
+      |> compare_hashes()
+      |> halt_or_pipe_through(opts)
     else
       conn |> Plug.Parsers.call(Plug.Parsers.init(opts[:plug_parsers] ++ opts))
     end
   end
-  defp do_call(conn, opts, nil), do: do_call(conn, opts)
+
+  defp put_algo_opts(conn, opts) do
+    do_put_algo_opts(opts, Keyword.get(opts, :validate), conn)
+  end
+  defp do_put_algo_opts(opts, {header_key, secret_key, hash_algo, digest}, _conn) do
+    opts
+    |> Keyword.put_new(:hash_algo, hash_algo)
+    |> Keyword.put_new(:digest, digest)
+    |> Keyword.put(:validate, {header_key, secret_key})
+  end
+  defp do_put_algo_opts(opts, {header_key, secret_key}, conn) do
+    do_put_algo_opts(opts, {header_key, secret_key, :sha256, &Base.encode64/1}, conn)
+  end
+  defp do_put_algo_opts(opts, [validate_opt | rest], conn) do
+    header_key = elem(validate_opt, 0)
+    case List.keyfind(conn.req_headers, header_key, 0) do
+      {^header_key, _} -> do_put_algo_opts(opts, validate_opt, conn)
+      nil -> do_put_algo_opts(opts, rest, conn)
+    end
+  end
+  defp do_put_algo_opts(opts, [validate_opt | []], conn) do
+    header_key = elem(validate_opt, 0)
+    case List.keyfind(conn.req_headers, header_key, 0) do
+      {^header_key, _} -> do_put_algo_opts(opts, validate_opt, conn)
+      nil -> do_put_algo_opts(opts, nil, nil)
+    end
+  end
+  defp do_put_algo_opts(opts, _, _), do: opts
 
   defp must_be_validated?(_path_info, []), do: false
-  defp must_be_validated?(path_info, [validated_path]) do
+  defp must_be_validated?(_path_info, nil), do: true
+  defp must_be_validated?(path_info, {:only, [validated_path]}) do
     is_path?(String.split(validated_path, "/"), path_info)
   end
-  defp must_be_validated?(path_info, [validated_path | validated_paths]) do
+  defp must_be_validated?(path_info, {:only, [validated_path | validated_paths]}) do
     is_path?(String.split(validated_path, "/"), path_info) || must_be_validated?(path_info, validated_paths)
   end
 
@@ -113,7 +128,7 @@ defmodule PlugHMouse do
   defp is_path?([":" <> _url_param | rest_path_1], [_ | rest_path_2]), do: is_path?(rest_path_1, rest_path_2)
   defp is_path?(_, _), do: false
 
-  defp get_hashes(conn, header_key) do
+  defp get_hashes(conn, {header_key, secret_key}) do
     case List.keyfind(conn.req_headers, header_key, 0) do
       {^header_key, hash} ->
         {:ok, conn, get_hmouse_hash(conn), hash}
@@ -139,12 +154,16 @@ defmodule PlugHMouse do
 
   @spec hash(string :: String.t, opts :: Keyword.t) :: String.t
   def hash(string, opts) do
-    :crypto.hmac(opts[:hash_algo], opts[:secret_key], string) |> opts[:digest].()
+    :crypto.hmac(opts[:hash_algo], elem(opts[:validate], 1), string) |> opts[:digest].()
   end
 
   @spec put_plug_hmouse_hash(conn :: Plug.Conn.t, body :: String.t, opts :: Keyword.t) :: Plug.Conn.t
   def put_plug_hmouse_hash(conn, body, opts) do
-    put_private(conn, :plug_hmouse_hashed_body, PlugHMouse.hash(body, opts))
+    if conn.path_info |> must_be_validated?(List.keyfind(opts, :only, 0)) do
+      put_private(conn, :plug_hmouse_hashed_body, PlugHMouse.hash(body, opts))
+    else
+      conn
+    end
   end
 
 end

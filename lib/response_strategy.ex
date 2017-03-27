@@ -22,8 +22,7 @@ defmodule PlugHMouse.ResponseStrategy do
       end
 
       plug PlugHMouse,
-        secret_key: "MyKey",
-        header_key: "x-shopify-hmac-sha256",
+        validate: {"x-shopify-hmac-sha256", "MyKey"},
         error_views:
           [{"json", PlugHMouse.RenderStrategy.JSONError, "403.json", MyApp.ResponseStrategy}]
   """

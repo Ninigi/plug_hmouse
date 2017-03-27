@@ -1,9 +1,8 @@
 defmodule PlugHMouseTest do
   use ExUnit.Case
   use Plug.Test
-  # doctest Hmouth
 
-  @valid_options [secret_key: "MySecret-Key", header_key: "hmac-test"]
+  @valid_options [validate: {"hmac-test", "MySecret-Key"}]
   @valid_hash_options @valid_options ++ [hash_algo: :sha256, digest: &Base.encode64/1]
 
   defmodule ErrorView do
@@ -36,7 +35,7 @@ defmodule PlugHMouseTest do
     hash = PlugHMouse.hash(body, @valid_hash_options)
 
     conn(:post, "/", body)
-      |> put_req_header(@valid_options[:header_key], hash)
+      |> put_req_header(elem(@valid_options[:validate], 0), hash)
       |> put_req_header("content-type", content_type)
       |> PlugHMouse.call(PlugHMouse.init(@valid_options))
   end
@@ -45,7 +44,7 @@ defmodule PlugHMouseTest do
     hash = PlugHMouse.hash(body, @valid_hash_options)
 
     conn(:post, "/", invalid_body)
-      |> put_req_header(@valid_options[:header_key], hash)
+      |> put_req_header(elem(@valid_options[:validate], 0), hash)
       |> put_req_header("content-type", content_type)
       |> PlugHMouse.call(PlugHMouse.init(@valid_options))
   end
@@ -84,7 +83,7 @@ defmodule PlugHMouseTest do
     options = @valid_options ++ [error_views: [{"json", __MODULE__.ErrorView, "403.json", __MODULE__.ErrorView}]]
 
     conn = conn(:post, "/", Poison.encode!(%{"content" => "The invalid Body"}))
-      |> put_req_header(@valid_options[:header_key], hash)
+      |> put_req_header(elem(@valid_options[:validate], 0), hash)
       |> put_req_header("content-type", "application/vnd.api+json")
       |> PlugHMouse.call(PlugHMouse.init(options))
 
@@ -98,21 +97,57 @@ defmodule PlugHMouseTest do
     options = @valid_options ++ [only: ["validated-address"]]
 
     conn(:post, "/validated-address/1/acb/abc/acdc", body)
-      |> put_req_header("content-type", "application/vnd.api+json")
-      |> PlugHMouse.call(PlugHMouse.init(options))
-      |> assert_unauthorized()
+    |> put_req_header("content-type", "application/vnd.api+json")
+    |> PlugHMouse.call(PlugHMouse.init(options))
+    |> assert_unauthorized()
 
     conn(:post, "/not-validated-address/1", body)
+    |> put_req_header("content-type", "application/vnd.api+json")
+    |> PlugHMouse.call(PlugHMouse.init(options))
+    |> assert_authorized()
+  end
+
+  @tag :config_multiple_headers
+  test "config multiple headers to validate" do
+    options = [validate: [{"hmac-test", "MySecret-Key"}, {"other-hmac-test", "MyOtherSecretKey"}]]
+    hash = PlugHMouse.hash(Poison.encode!(%{"content" => "The Body"}), [validate: {"other-hmac-test", "MyOtherSecretKey"}, hash_algo: :sha256, digest: &Base.encode64/1])
+
+    conn(:post, "/", Poison.encode!(%{"content" => "The Body"}))
+      |> put_req_header("other-hmac-test", hash)
       |> put_req_header("content-type", "application/vnd.api+json")
       |> PlugHMouse.call(PlugHMouse.init(options))
       |> assert_authorized()
+
+      conn(:post, "/", Poison.encode!(%{"content" => "The invalid Body"}))
+        |> put_req_header("other-hmac-test", hash)
+        |> put_req_header("content-type", "application/vnd.api+json")
+        |> PlugHMouse.call(PlugHMouse.init(options))
+        |> assert_unauthorized()
+  end
+
+  @tag :config_multiple_hash_strats
+  test "config multiple headers with different hashing strategies" do
+    options = [validate: [{"hmac-test", "MySecret-Key"}, {"other-hmac-test", "MyOtherSecretKey", :md5, &Base.encode64/1}]]
+    hash = PlugHMouse.hash(Poison.encode!(%{"content" => "The Body"}), [validate: {"other-hmac-test", "MyOtherSecretKey"}, hash_algo: :md5, digest: &Base.encode64/1])
+
+    conn(:post, "/", Poison.encode!(%{"content" => "The Body"}))
+      |> put_req_header("other-hmac-test", hash)
+      |> put_req_header("content-type", "application/vnd.api+json")
+      |> PlugHMouse.call(PlugHMouse.init(options))
+      |> assert_authorized()
+
+      conn(:post, "/", Poison.encode!(%{"content" => "The invalid Body"}))
+        |> put_req_header("other-hmac-test", hash)
+        |> put_req_header("content-type", "application/vnd.api+json")
+        |> PlugHMouse.call(PlugHMouse.init(options))
+        |> assert_unauthorized()
   end
 
   @tag :hash
   test "hash/2" do
     hash = :crypto.hmac(:sha256, "AKey", "A String") |> Base.encode16
 
-    assert hash == PlugHMouse.hash("A String", hash_algo: :sha256, secret_key: "AKey", digest: &Base.encode16/1)
+    assert hash == PlugHMouse.hash("A String", hash_algo: :sha256, validate: {"something", "AKey"}, digest: &Base.encode16/1)
   end
 
 end

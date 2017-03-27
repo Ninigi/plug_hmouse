@@ -21,8 +21,7 @@ defmodule MyApp.Endpoint do
   #   json_decoder: Poison
 
   plug PlugHMouse,
-    secret_key: "MySecretKey123",
-    header_key: "x-shopify-hmac-sha256"
+    validate: {"x-shopify-hmac-sha256", "MySecretKey123"}
 
   # ...
 end
@@ -54,14 +53,26 @@ end
 
 Run `mix deps.get`, now all incomming requests will get rejected if they are missing the HMAC header or are not signed correctly!
 
+## Installation
+
+The package can be installed by adding `plug_hmouse` to your list of dependencies in `mix.exs`:
+
+```elixir
+def deps do
+  [{:plug_hmouse, "~> 0.0.1"}]
+end
+```
+
+HMouse will consume the response body, like Plug.Parsers does, so make sure you do not have any plugs depending
+on the body, or write a custom parser to process the body.
+
 ## Options
 
 There are a few options you can pass to the plug to get some more control:
 
 ```elixir
 plug PlugHMouse,
-  secret_key: "MySecretKey123",
-  header_key: "hmac-md5",
+  validate: {"hmac-md5", "MySecretKey123"}
   only: ["webhooks/verified"],
   error_views: [
     {"json", MyApp.JSONErrorStrategy, "403.json", MyApp.JSONResponseStrategy},
@@ -76,14 +87,15 @@ plug PlugHMouse,
   digest: fn string -> Base.encode16(string) end
 ```
 
-### secret_key (mandatory)
+### validate (mandatory)
 
-This is the string used to sign the request body, in the Shopify example, you can find it under your webhhooks.
+Usually a Tuple in the form of `{"hmac-header-name", "my-secret-key"}`, can also be a List of Tuples
+of the same form.
 
-### header_key (mandatory)
+* **header-name** This is the string used to sign the request body, in the Shopify example, you can find it under your webhhooks
 
-Tell HMouse where to find the signature! In the Shopify example it is `X-Shopify-Hmac-SHA256`, but since
-all Conn headers are lowercase, we need to pass `header_key: "x-shopify-hmac-sha256"`.
+* **secret-key** Tell HMouse where to find the signature! In the Shopify example it is `X-Shopify-Hmac-SHA256`, but since
+  all Conn headers are lowercase, we need to pass `"x-shopify-hmac-sha256"`
 
 ### error_views (optional)
 
@@ -143,28 +155,13 @@ This means, you can simply pass all the options you would normally pass to Plug.
 
 ```elixir
 plug PlugHMouse,
-  secret_key: "MySecretKey123",
-  header_key: "hmac-header",
+  validate: {"hmac-header", "MySecretKey123"},
   plug_parsers: [
     parsers: [:urlencoded, :multipart, :json],
     pass: ["application/vnd.api+json"],
     json_decoder: Poison
   ]
 ```
-
-
-## Installation
-
-The package can be installed by adding `plug_hmouse` to your list of dependencies in `mix.exs`:
-
-```elixir
-def deps do
-  [{:plug_hmouse, "~> 0.0.1"}]
-end
-```
-
-HMouse will consume the response body, like Plug.Parsers does, so make sure you do not have any plugs depending
-on the body, or write a custom parser to process the body.
 
 ## Custom Parsers
 
@@ -198,4 +195,27 @@ defmodule MyApp.MyParser do
     {:next, conn}
   end
 end
+```
+
+## Multiple Headers
+
+If you need to validate different headers - for example if you have a single app handling multiple webhooks - you can pass a list
+to the `:validate` option:
+
+```elixir
+plug PlugHMouse,
+  validate: [
+    {"hmac-header", "MySecretKey123"},
+    {"other-hmac-header", "MyOtherSecretKey123"}
+  ]
+```
+
+If you need different hashing strategies, you can set them like this:
+
+```elixir
+plug PlugHMouse,
+  validate: [
+    {"hmac-header", "MySecretKey123", :sha256, &Base.encode16/1},
+    {"other-hmac-header", "MyOtherSecretKey123", :sha256, &Base.encode64/1}
+  ]
 ```

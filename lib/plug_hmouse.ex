@@ -77,7 +77,7 @@ defmodule PlugHMouse do
 
       conn
       |> Plug.Parsers.call(Plug.Parsers.init(opts[:plug_parsers] ++ opts))
-      |> get_hashes(opts[:validate], opts[:b16_digest], opts[:split_digest])
+      |> get_hashes(opts[:validate], opts[:split_digest])
       |> compare_hashes()
       |> halt_or_pipe_through(opts)
     else
@@ -128,30 +128,21 @@ defmodule PlugHMouse do
   defp is_path?([":" <> _url_param | rest_path_1], [_ | rest_path_2]), do: is_path?(rest_path_1, rest_path_2)
   defp is_path?(_, _), do: false
 
-  defp get_hashes(conn, {header_key, secret_key}, b16 \\ false, split \\ false) do
+  defp get_hashes(conn, {header_key, secret_key}, split \\ false) do
     case List.keyfind(conn.req_headers, header_key, 0) do
       {^header_key, hash} ->
-        {:ok, conn, get_hmouse_hash(conn), clean_hash(hash, b16, split)}
+        {:ok, conn, get_hmouse_hash(conn), split_hash(hash, split)}
       nil ->
         {:ok, conn, get_hmouse_hash(conn), nil}
     end
   end
 
-  defp clean_hash(hash, b16, true) do
-    # in case of algo=digest format
+  defp split_hash(hash, true) do
     hash
     |> String.split("=")
     |> Enum.at(1)
-    |> clean_hash(b16, false)
   end
-  defp clean_hash(hash, true, _) do
-    # in case hash comes as hex string
-    case Base.decode16(hash, case: :mixed) do
-      {:ok, bin_str} -> Base.encode64(bin_str)
-      :error -> nil
-    end
-  end
-  defp clean_hash(hash, _, _), do: hash
+  defp split_hash(hash, _), do: hash
 
   defp get_hmouse_hash(%{private: %{plug_hmouse_hashed_body: hash}}), do: hash
   defp get_hmouse_hash(_), do: "empty"

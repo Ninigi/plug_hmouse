@@ -139,7 +139,7 @@ defmodule PlugHMouse do
 
   defp split_hash(hash, true) do
     hash
-    |> String.split("=")
+    |> String.split("=", parts: 2)
     |> Enum.at(1)
   end
   defp split_hash(hash, _), do: hash

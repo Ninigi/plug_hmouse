@@ -150,4 +150,45 @@ defmodule PlugHMouseTest do
     assert hash == PlugHMouse.hash("A String", hash_algo: :sha256, validate: {"something", "AKey"}, digest: &Base.encode16/1)
   end
 
+  @tag :split_hash
+  test "split_digest true with valid input" do
+    body = Poison.encode!(%{"content" => "The Body"})
+    hash = "sha256=" <> PlugHMouse.hash(body, @valid_hash_options)
+    options = @valid_hash_options ++ [split_digest: true]
+
+    conn(:post, "/", body)
+    |> put_req_header(elem(@valid_options[:validate], 0), hash)
+    |> put_req_header("content-type", "application/vnd.api+json")
+    |> PlugHMouse.call(PlugHMouse.init(options))
+    |> assert_authorized
+  end
+
+  @tag :split_hash
+  test "split_digest true with non-splittable input" do
+    body = Poison.encode!(%{"content" => "The Body"})
+    # no "algo=" on the front
+    hash = PlugHMouse.hash(body, @valid_hash_options)
+    options = @valid_hash_options ++ [split_digest: true]
+
+    conn(:post, "/", body)
+    |> put_req_header(elem(@valid_options[:validate], 0), hash)
+    |> put_req_header("content-type", "application/vnd.api+json")
+    |> PlugHMouse.call(PlugHMouse.init(options))
+    |> assert_unauthorized
+  end
+
+  @tag :split_hash
+  test "split_digest true with wrong hash" do
+    body = Poison.encode!(%{"content" => "The Body"})
+    # incorrect hash
+    hash = "aaaaaaaaaaaaaaaaaaaaaa"
+    options = @valid_hash_options ++ [split_digest: true]
+
+    conn(:post, "/", body)
+    |> put_req_header(elem(@valid_options[:validate], 0), hash)
+    |> put_req_header("content-type", "application/vnd.api+json")
+    |> PlugHMouse.call(PlugHMouse.init(options))
+    |> assert_unauthorized
+  end
+
 end

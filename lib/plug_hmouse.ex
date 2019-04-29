@@ -77,7 +77,7 @@ defmodule PlugHMouse do
 
       conn
       |> Plug.Parsers.call(Plug.Parsers.init(opts[:plug_parsers] ++ opts))
-      |> get_hashes(opts[:validate])
+      |> get_hashes(opts[:validate], opts[:split_digest])
       |> compare_hashes()
       |> halt_or_pipe_through(opts)
     else
@@ -128,14 +128,21 @@ defmodule PlugHMouse do
   defp is_path?([":" <> _url_param | rest_path_1], [_ | rest_path_2]), do: is_path?(rest_path_1, rest_path_2)
   defp is_path?(_, _), do: false
 
-  defp get_hashes(conn, {header_key, secret_key}) do
+  defp get_hashes(conn, {header_key, secret_key}, split \\ false) do
     case List.keyfind(conn.req_headers, header_key, 0) do
       {^header_key, hash} ->
-        {:ok, conn, get_hmouse_hash(conn), hash}
+        {:ok, conn, get_hmouse_hash(conn), split_hash(hash, split)}
       nil ->
         {:ok, conn, get_hmouse_hash(conn), nil}
     end
   end
+
+  defp split_hash(hash, true) do
+    hash
+    |> String.split("=", parts: 2)
+    |> Enum.at(1)
+  end
+  defp split_hash(hash, _), do: hash
 
   defp get_hmouse_hash(%{private: %{plug_hmouse_hashed_body: hash}}), do: hash
   defp get_hmouse_hash(_), do: "empty"

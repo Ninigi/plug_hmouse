@@ -84,7 +84,8 @@ plug PlugHMouse,
     json_decoder: Poison
   ],
   hash_algo: :md5,
-  digest: fn string -> Base.encode16(string) end
+  digest: fn string -> Base.encode16(string) end,
+  split_digest: true
 ```
 
 ### validate (mandatory)
@@ -144,6 +145,26 @@ for `:crypto.hmac` are usable.
 ### digest (optional, default: Base.encode64/2)
 
 You can define your own encoding function.
+
+### split_digest (optional, default: `false`)
+
+Determines whether the digest of the request is in the format:
+
+```
+header_name: algo=digest
+eg. X-Hub-Signature: sha1=7d38cdd689735b008b3c702edd92eea23791c5f6
+```
+
+Or:
+
+```
+header_name: digest
+eg. X-Shopify-Hmac-SHA256: fTjN1olzWwCLPHAu3ZLuojeRxfY=
+```
+
+If `split_digest` is set to `true` then the first form will be assumed and the value will be split at the equals sign, with the latter part being taken as the digest. If it is `false` then the second form will be assumed and the full value will be considered the digest.
+
+**Note**: Currently this feature does not use the first half of the value as the hash algorithm, you still have to define the algorithm manually with `hash_algo`.
 
 ### plug_parsers (optional, all values for Plug.Parsers options are allowed)
 
